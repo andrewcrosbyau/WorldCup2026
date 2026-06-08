@@ -1,25 +1,59 @@
-# CODING AGENTS: READ THIS FIRST
+# WC2026 West Coast Trip Planner
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+A trip-planning web app for Will & Andy's West Coast USA road trip around the 2026 FIFA World Cup.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+![Home screen](home-screenshot.png)
 
-## What you should do — IMPORTANT
+## What it is
 
-**Read the chat transcripts first.** There are 1 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+A polished, offline-capable trip planner with a 70s national-park poster aesthetic. Features:
 
-**Read `project/WC2026 Trip Planner.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+- **Home** — live countdown to the next Socceroos match, today's plan, recent activity, and pinned favorites
+- **Route** — stylized poster-style map of all 8 stops with drive times and travel legs
+- **Itinerary** — day-by-day timeline (Jun 12–26), editable notes, match call-outs, drag-to-assign ideas
+- **Ideas** — ~150 pre-loaded ideas from Vancouver to San Jose, grouped by stop, filterable by category
+- **Logistics** — hotel cards with addresses, live weather forecasts (Open-Meteo), and transfer timeline
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+## The trip
 
-## About the design files
+| # | Stop | Dates | Match |
+|---|------|-------|-------|
+| 1 | Vancouver, BC | Jun 12–14 | ⚽ Australia v Türkiye (Group D) |
+| 2 | Seattle (Round 1) | Jun 14–16 | Fan zone |
+| 3 | Olympic National Park | Jun 16–18 | — |
+| 4 | Seattle (Round 2) | Jun 18–20 | ⚽ USA v Australia (Group D) |
+| 5 | Portland, OR | Jun 20–21 | — |
+| 6 | Crater Lake, OR | Jun 21–23 | — |
+| 7 | Napa Valley, CA | Jun 23–25 | — |
+| 8 | San Jose / SF | Jun 25–26 | ⚽ Paraguay v Australia (Group D) |
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+## Running it
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+Open `index.html` in any modern browser — no build step, no server required.
 
-## Bundle contents
+Or serve it with any static file server:
 
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `WC2026` project files (HTML prototypes, assets, components)
+```bash
+npx serve .
+# or
+python3 -m http.server 8080
+```
+
+Then open `http://localhost:8080`.
+
+## Two-person workflow
+
+Switch between Will (W) and Andy (A) using the avatar switcher in the top-right corner. Every pin, note, and assignment is stamped with the active user.
+
+> **Note:** Data is stored in browser `localStorage` — each device has its own copy. For real-time shared state, a sync backend (Firebase/Supabase) would need to be added.
+
+## Customisation
+
+The **Tweaks** button (bottom-right) lets you switch:
+- **Palette:** Ranger · Crater · Redwood · Sunset
+- **Font pair:** Ranger · Souvenir · Editorial  
+- **Card style:** Poster · Soft · Stamp
+
+## Tech
+
+Pure HTML/CSS + React 18 + Babel (CDN, no build step). All styles are inline CSS variables with a 70s National Park poster design system. Weather data from [Open-Meteo](https://open-meteo.com/) (free, no API key).
