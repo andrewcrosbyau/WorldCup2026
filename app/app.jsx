@@ -47,7 +47,7 @@ function UserSwitcher({ activeUser, onChange }) {
   );
 }
 
-function Header({ tab, onTab, activeUser, onChangeUser }) {
+function Header({ tab, onTab, activeUser, onChangeUser, cloudReady }) {
   return (
     <header style={{
       position: "sticky", top: 0, zIndex: 50,
@@ -85,8 +85,19 @@ function Header({ tab, onTab, activeUser, onChangeUser }) {
           ))}
         </nav>
 
-        {/* User switcher */}
-        <UserSwitcher activeUser={activeUser} onChange={onChangeUser} />
+        {/* User switcher + sync badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div title={cloudReady ? "Synced across devices" : "Local only — add Firebase config to enable sync"}
+               style={{ display: "flex", alignItems: "center", gap: 4, opacity: 0.75 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 7, flexShrink: 0,
+              background: cloudReady ? "var(--forest)" : "var(--rule)",
+              border: "1px solid var(--ink-mute)" }} />
+            <span className="mono header-sub" style={{ fontSize: 9, color: "var(--ink-mute)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              {cloudReady ? "SYNC" : "LOCAL"}
+            </span>
+          </div>
+          <UserSwitcher activeUser={activeUser} onChange={onChangeUser} />
+        </div>
       </div>
 
       <span className="park-rule" style={{ display: "block" }}></span>
@@ -162,7 +173,7 @@ function App() {
 
   return (
     <div className={rootClass}>
-      <Header tab={tab} onTab={onGoto} activeUser={activeUser} onChangeUser={setActiveUser} />
+      <Header tab={tab} onTab={onGoto} activeUser={activeUser} onChangeUser={setActiveUser} cloudReady={store.cloudReady} />
 
       <main className="r-main-pad">
         {tab === "home" && (

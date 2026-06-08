@@ -270,25 +270,76 @@ function CatIcon({ cat, size = 14 }) {
 }
 
 // ============================================================
-// Trip store (localStorage)
+// Trip store — localStorage + Firestore cross-device sync
 // ============================================================
 const STORE_KEY = "wc2026.store.v1";
 
 function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); } catch { return {}; } }
 function saveStore(s) { localStorage.setItem(STORE_KEY, JSON.stringify(s)); }
 
+// Initialise Firebase once; returns Firestore db or null if not configured.
+let _fireDB = null, _fireTried = false;
+function getFireDB() {
+  if (_fireTried) return _fireDB;
+  _fireTried = true;
+  const cfg = window.FIREBASE_CONFIG;
+  if (!cfg || !cfg.projectId || String(cfg.projectId).startsWith("YOUR_")) return null;
+  try {
+    if (typeof firebase === "undefined") return null;
+    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+    _fireDB = app.firestore();
+  } catch (e) { console.warn("WC2026: Firebase init failed:", e); }
+  return _fireDB;
+}
+
+// Write to Firestore (primary) and keep localStorage as offline cache.
+function persist(s) {
+  saveStore(s);
+  const db = getFireDB();
+  if (db) db.collection("trips").doc("wc2026").set(s).catch(e => console.warn("Firestore write:", e));
+}
+
 function useTripStore() {
   const [state, setState] = React.useState(() => {
     const s = loadStore();
     return { items: s.items||{}, custom: s.custom||[], confirms: s.confirms||{}, activity: s.activity||[], dayNotes: s.dayNotes||{} };
   });
-  React.useEffect(() => { saveStore(state); }, [state]);
+  const [cloudReady, setCloudReady] = React.useState(false);
+  const stateRef = React.useRef(state);
+  stateRef.current = state;
 
-  const log = (text, user) => setState(s => ({ ...s, activity: [{ t: Date.now(), text, user }, ...s.activity].slice(0, 80) }));
-  const patchItem = (id, patch, user) => setState(s => {
-    const next = { ...s.items[id]||{}, ...patch, modifiedBy: user, modifiedAt: Date.now() };
-    return { ...s, items: { ...s.items, [id]: next } };
+  // Subscribe to Firestore; seed cloud with local state if doc doesn't exist yet.
+  React.useEffect(() => {
+    const db = getFireDB();
+    if (!db) return;
+    const ref = db.collection("trips").doc("wc2026");
+    const unsub = ref.onSnapshot(snap => {
+      if (snap.exists()) {
+        const d = snap.data();
+        const next = { items: d.items||{}, custom: d.custom||[], confirms: d.confirms||{}, activity: d.activity||[], dayNotes: d.dayNotes||{} };
+        setState(next);
+        saveStore(next);
+      } else {
+        ref.set(stateRef.current);
+      }
+      setCloudReady(true);
+    }, err => console.warn("WC2026: Firestore listener:", err));
+    return unsub;
+  }, []);
+
+  // Central mutator: apply an updater function, then persist.
+  const mutate = (updater) => setState(prev => {
+    const next = updater(prev);
+    persist(next);
+    return next;
   });
+
+  const log = (text, user) => mutate(s => ({ ...s, activity: [{ t: Date.now(), text, user }, ...s.activity].slice(0, 80) }));
+
+  const patchItem = (id, patch, user) => mutate(s => ({
+    ...s, items: { ...s.items, [id]: { ...s.items[id]||{}, ...patch, modifiedBy: user, modifiedAt: Date.now() } }
+  }));
+
   const togglePin = (idea, user) => {
     const wasPinned = (state.items[idea.id]?.pinned) ?? !!idea.pinned;
     patchItem(idea.id, { pinned: !wasPinned }, user);
@@ -305,22 +356,25 @@ function useTripStore() {
   const addCustom = (idea, user) => {
     const id = `custom-${Date.now().toString(36)}`;
     const o = { id, ...idea, by: user, custom: true, maps: idea.maps || `${idea.title}, ${window.TRIP_DATA.STOPS.find(s=>s.id===idea.stop)?.name}` };
-    setState(s => ({ ...s, custom: [o, ...s.custom] }));
+    mutate(s => ({ ...s, custom: [o, ...s.custom] }));
     log(`Added new idea "${idea.title}"`, user);
     return o;
   };
   const removeCustom = (id, user) => {
-    setState(s => ({ ...s, custom: s.custom.filter(x => x.id !== id) }));
+    mutate(s => ({ ...s, custom: s.custom.filter(x => x.id !== id) }));
     log(`Removed a custom idea`, user);
   };
-  const toggleConfirm = (id, user) => setState(s => {
-    const next = !s.confirms[id];
-    log(`${next?"Confirmed":"Reopened"} a checklist item`, user);
-    return { ...s, confirms: { ...s.confirms, [id]: next } };
+  const toggleConfirm = (id, user) => mutate(s => {
+    const confirmed = !s.confirms[id];
+    return {
+      ...s,
+      confirms: { ...s.confirms, [id]: confirmed },
+      activity: [{ t: Date.now(), text: `${confirmed?"Confirmed":"Reopened"} a checklist item`, user }, ...s.activity].slice(0, 80),
+    };
   });
-  const setDayNote = (date, text, user) => setState(s => ({ ...s, dayNotes: { ...s.dayNotes, [date]: text } }));
+  const setDayNote = (date, text, user) => mutate(s => ({ ...s, dayNotes: { ...s.dayNotes, [date]: text } }));
 
-  return { state, patchItem, togglePin, assignToDay, setStatus, addCustom, removeCustom, toggleConfirm, setDayNote, log };
+  return { state, cloudReady, patchItem, togglePin, assignToDay, setStatus, addCustom, removeCustom, toggleConfirm, setDayNote, log };
 }
 
 function mergeIdea(idea, store) {
