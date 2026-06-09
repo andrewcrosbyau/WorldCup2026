@@ -277,26 +277,30 @@ const STORE_KEY = "wc2026.store.v1";
 function loadStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); } catch { return {}; } }
 function saveStore(s) { localStorage.setItem(STORE_KEY, JSON.stringify(s)); }
 
-// Initialise Firebase once; returns Firestore db or null if not configured.
-let _fireDB = null, _fireTried = false;
-function getFireDB() {
-  if (_fireTried) return _fireDB;
-  _fireTried = true;
-  const cfg = window.FIREBASE_CONFIG;
-  if (!cfg || !cfg.projectId || String(cfg.projectId).startsWith("YOUR_")) return null;
+// Initialise Supabase once; returns client or null if not configured.
+let _supaClient = null;
+function getSupabase() {
+  if (_supaClient) return _supaClient;
+  const url = window.SUPABASE_URL, key = window.SUPABASE_ANON_KEY;
+  if (!url || !key || url.startsWith("YOUR_")) return null;
   try {
-    if (typeof firebase === "undefined") return null;
-    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
-    _fireDB = app.firestore();
-  } catch (e) { console.warn("WC2026: Firebase init failed:", e); }
-  return _fireDB;
+    if (typeof supabase === "undefined") return null;
+    _supaClient = supabase.createClient(url, key);
+  } catch (e) { console.warn("WC2026: Supabase init failed:", e); }
+  return _supaClient;
 }
 
-// Write to Firestore (primary) and keep localStorage as offline cache.
+// Write to Supabase (primary) and keep localStorage as offline cache.
 function persist(s) {
   saveStore(s);
-  const db = getFireDB();
-  if (db) db.collection("trips").doc("wc2026").set(s).catch(e => console.warn("Firestore write:", e));
+  const client = getSupabase();
+  if (!client) return;
+  client.from("trips").upsert({ id: "wc2026", state: s })
+    .then(({ error }) => { if (error) console.warn("Supabase write:", error.message); });
+}
+
+function normalizeState(d) {
+  return { items: d.items||{}, custom: d.custom||[], confirms: d.confirms||{}, activity: d.activity||[], dayNotes: d.dayNotes||{} };
 }
 
 function useTripStore() {
@@ -308,23 +312,34 @@ function useTripStore() {
   const stateRef = React.useRef(state);
   stateRef.current = state;
 
-  // Subscribe to Firestore; seed cloud with local state if doc doesn't exist yet.
+  // Fetch current state then subscribe to real-time changes.
   React.useEffect(() => {
-    const db = getFireDB();
-    if (!db) return;
-    const ref = db.collection("trips").doc("wc2026");
-    const unsub = ref.onSnapshot(snap => {
-      if (snap.exists()) {
-        const d = snap.data();
-        const next = { items: d.items||{}, custom: d.custom||[], confirms: d.confirms||{}, activity: d.activity||[], dayNotes: d.dayNotes||{} };
-        setState(next);
-        saveStore(next);
-      } else {
-        ref.set(stateRef.current);
-      }
-      setCloudReady(true);
-    }, err => console.warn("WC2026: Firestore listener:", err));
-    return unsub;
+    const client = getSupabase();
+    if (!client) return;
+
+    // Initial load
+    client.from("trips").select("state").eq("id", "wc2026").single()
+      .then(({ data, error }) => {
+        if (data?.state) {
+          const next = normalizeState(data.state);
+          setState(next); saveStore(next);
+        } else if (error?.code === "PGRST116") {
+          // No row yet — seed with local state
+          client.from("trips").insert({ id: "wc2026", state: stateRef.current });
+        }
+      });
+
+    // Real-time subscription
+    const channel = client.channel("trip-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "trips", filter: "id=eq.wc2026" },
+        ({ new: row }) => {
+          if (!row?.state) return;
+          const next = normalizeState(row.state);
+          setState(next); saveStore(next);
+        })
+      .subscribe(status => { if (status === "SUBSCRIBED") setCloudReady(true); });
+
+    return () => { client.removeChannel(channel); };
   }, []);
 
   // Central mutator: apply an updater function, then persist.
